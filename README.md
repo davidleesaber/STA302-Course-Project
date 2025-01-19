@@ -24,13 +24,6 @@ This project investigates factors influencing NBA player salaries, focusing on p
 - Moderate multicollinearity impacted coefficient reliability, particularly for interaction terms.  
 - Outliers such as high-leverage players skewed model predictions slightly.  
 
-## Team Contributions
-- **David Lee**: Methods, results analysis, poster design, and final editing.  
-- **Youyu Fu**: Code development, results analysis, and conclusions.  
-- **Ryan Li**: Introduction, results, and editing.
-
 ## Dataset
 The dataset is publicly available on Kaggle and includes detailed player statistics from 2016–2019. It is verified with NBA’s official statistics.  
 
-## Poster
-The project poster provides a concise overview of the findings and methodology: [View Poster](Upload link here or specify location).  
