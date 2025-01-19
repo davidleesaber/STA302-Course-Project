@@ -1,0 +1,435 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, include=FALSE, show_col_types = FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=8, fig.height=4)
+```
+# Data preprocessing
+```{r}
+library(dplyr)
+library(readr)
+
+# Read the data
+nba_data <- read_csv("nba_final.csv")
+
+# Clean the data by removing observations with NA entries
+nba_data_final <- nba_data %>%
+  filter(!is.na(Age), 
+         !is.na(PTS),
+         !is.na(AST),
+         !is.na(TRB),
+         !is.na(Pos1),
+         !is.na(mean_views),
+         Salary >0)
+
+nba_data_final <- nba_data_final %>%
+  mutate(Pos1 = factor(Pos1))
+```
+# EDA
+```{r}
+# histogram of Salary
+hist(nba_data_final$Salary, breaks = 30)
+# boxplot of Salary
+boxplot(nba_data_final$Salary, xlab = "Salary (USD)", horizontal = TRUE)
+
+# Salary vs each predictor
+par(mfrow = c(2, 3),
+mar = c(4, 4, 2, 1))
+
+plot(nba_data_final$Age, nba_data_final$Salary,
+     main = "Salary vs Age",
+     xlab = "Age",
+     ylab = "Salary (USD)",
+     pch = 16,           # Solid circle
+     col = "steelblue")
+
+# Add linear regression line
+abline(lm(Salary ~ Age, data = nba_data_final), col = "red", lwd = 2)
+
+# Scatter plot of Salary vs PTS
+plot(nba_data_final$PTS, nba_data_final$Salary,
+     main = "Salary vs Points (PTS)",
+     xlab = "Points (PTS)",
+     ylab = "Salary (USD)",
+     pch = 16,
+     col = "darkgreen")
+
+# Add linear regression line
+abline(lm(Salary ~ PTS, data = nba_data_final), col = "red", lwd = 2)
+
+# Scatter plot of Salary vs AST
+plot(nba_data_final$AST, nba_data_final$Salary,
+     main = "Salary vs Assists (AST)",
+     xlab = "Assists (AST)",
+     ylab = "Salary (USD)",
+     pch = 16,
+     col = "purple")
+
+# Add linear regression line
+abline(lm(Salary ~ AST, data = nba_data_final), col = "red", lwd = 2)
+
+# Scatter plot of Salary vs TRB
+plot(nba_data_final$TRB, nba_data_final$Salary,
+     main = "Salary vs Rebounds (TRB)",
+     xlab = "Rebounds (TRB)",
+     ylab = "Salary (USD)",
+     pch = 16,
+     col = "orange")
+
+# Add linear regression line
+abline(lm(Salary ~ TRB, data = nba_data_final), col = "red", lwd = 2)
+
+# Scatter plot of Salary vs Mean Views
+plot(nba_data_final$mean_views, nba_data_final$Salary,
+     main = "Salary vs Mean Views",
+     xlab = "Mean Views",
+     ylab = "Salary (USD)",
+     pch = 16,
+     col = "brown")
+
+# Add linear regression line
+abline(lm(Salary ~ mean_views, data = nba_data_final), col = "red", lwd = 2)
+
+# Boxplot of Salary by Position
+boxplot(Salary ~ Pos1, data = nba_data_final,
+        main = "Salary by Position",
+        xlab = "Position",
+        ylab = "Salary (USD)",
+        col = "lightcoral",
+        border = "darkred")
+```
+# Checking multicolinearity
+```{r}
+predictor_fit <- lm(PTS ~ Age + AST + TRB + Pos1 + mean_views, data = nba_data_final)
+summary(predictor_fit)
+```
+# Fit the multiple regression model
+```{r}
+nba_model <- lm(Salary ~ Age * PTS + AST + TRB + Pos1 * mean_views, data = nba_data_final)
+
+# View the summary of the model
+summary(nba_model)
+```
+# Diagnostic plots
+```{r}
+par(mfrow = c(2, 2))
+plot(nba_model, which = c(1, 2, 3, 4))
+
+# Closer look at diagnostic plots
+par(mfrow = c(1,1))
+residuals <- resid(nba_model)
+fitted_values <- fitted(nba_model)
+
+# Residuals vs Fitted
+plot(fitted_values, residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, col = "red")  # Horizontal line at zero
+
+# Normal Q-Q Plot
+qqnorm(residuals, main = "Normal Q-Q Plot")
+qqline(residuals, col = "red")
+
+# Scale-Location Plot
+sqrt_std_resid <- sqrt(abs(residuals))  # Square root of standardized residuals
+plot(fitted_values, sqrt_std_resid,
+     xlab = "Fitted Values",
+     ylab = "Square Root of |Residuals|",
+     main = "Scale-Location Plot")
+lines(loess.smooth(fitted_values, sqrt_std_resid), col = "red", lwd = 2)
+```
+# residuals vs each predictor
+```{r}
+predictors <- nba_data_final[, c("Age", "PTS", "AST", "TRB", "mean_views", "Pos1")]  # Select predictors
+par(mfrow = c(2, 3))
+residuals <- resid(nba_model)
+for (predictor in names(predictors)) {
+  plot(predictors[[predictor]], residuals, 
+       xlab = predictor, 
+       ylab = "Residuals", 
+       main = paste("Residuals vs", predictor),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+}
+```
+# Transformations
+```{r}
+# Perform Box-Cox transformation
+library(MASS)
+
+# Apply Box-Cox transformation to find optimal lambda
+boxcox_fit <- boxcox(nba_model, lambda = seq(-2, 2, 0.1))
+lambda_optimal <- boxcox_fit$x[which.max(boxcox_fit$y)]  # Extract the optimal lambda
+lambda_optimal
+
+# Apply the transformation with the optimal lambda
+lambda <- 0.3
+if (lambda == 0) {
+  nba_data_final$Salary_transformed <- log(nba_data_final$Salary)
+} else {
+  nba_data_final$Salary_transformed <- (nba_data_final$Salary^lambda - 1) / lambda
+}
+
+# transform AST
+nba_data_final$Age_sq <- nba_data_final$Age^2
+
+# transform mean_views
+nba_data_final$log_mean_views <- log(nba_data_final$mean_views)
+
+# Fit the model with the transformed variables
+transformed_fit <- lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 * log_mean_views, 
+                      data = nba_data_final)
+
+# Summary of the transformed model
+summary(transformed_fit)
+```
+# Verify assumptions for transformed fit
+```{r}
+# Diagnostic plots
+par(mfrow = c(2, 2))
+plot(transformed_fit, which = c(1, 2, 3, 4))
+
+# Closer look at diagnostic plots
+par(mfrow = c(1,1))
+residuals <- resid(transformed_fit)
+fitted_values <- fitted(transformed_fit)
+sresidual_values <- rstandard(transformed_fit)
+
+# Residuals vs Fitted
+plot(fitted_values, residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, col = "red")  # Horizontal line at zero
+
+# Normal Q-Q Plot
+qqnorm(residuals, main = "Normal Q-Q Plot")
+qqline(residuals, col = "red")
+
+# Scale-Location Plot
+sqrt_std_resid <- sqrt(abs(residuals))  # Square root of standardized residuals
+plot(fitted_values, sqrt_std_resid,
+     xlab = "Fitted Values",
+     ylab = "Square Root of |Residuals|",
+     main = "Scale-Location Plot")
+lines(loess.smooth(fitted_values, sqrt_std_resid), col = "red", lwd = 2)
+
+hist(sresidual_values,
+     main = "Standardized residuals histogram",
+     xlab = "Standardized residuals")
+
+plot(nba_data_final[, c(46, 4, 47, 26, 27, 32, 48)], col="cadetblue")
+```
+# Comparison between preliminary and transformed model
+```{r}
+par(mfrow = c(1,2))
+
+# Closer look at diagnostic plots
+
+residuals <- resid(nba_model)
+fitted_values <- fitted(nba_model)
+
+Tresiduals <- resid(transformed_fit)
+Tfitted_values <- fitted(transformed_fit)
+Tsresidual_values <- rstandard(transformed_fit)
+
+
+# Residuals vs Fitted
+plot(fitted_values, residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Preliminary Residuals vs Fitted")
+abline(h = 0, col = "red")  # Horizontal line at zero
+# Residuals vs Fitted
+plot(Tfitted_values, Tresiduals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Transformed Residuals vs Fitted")
+abline(h = 0, col = "red")  # Horizontal line at zero
+# Normal Q-Q Plot
+
+qqnorm(residuals, main = "Preliminary Normal Q-Q Plot")
+qqline(residuals, col = "red")
+
+
+
+# Normal Q-Q Plot
+qqnorm(Tresiduals, main = "Transformed Normal Q-Q Plot")
+qqline(Tresiduals, col = "red")
+
+# residuals vs Age
+plot(nba_data_final$Age, residuals, 
+       xlab = "Age", 
+       ylab = "Residuals", 
+       main = paste("Residuals vs", "Age"),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+# residuals vs Age_sq
+plot(nba_data_final$Age_sq, Tresiduals, 
+       xlab = "Age_sq", 
+       ylab = "Residuals", 
+       main = paste("Transformed Residuals vs", "Age_sq"),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+  
+  # residuals vs mean_views
+plot(nba_data_final$mean_views, residuals, 
+       xlab = "mean_views", 
+       ylab = "Residuals", 
+       main = paste("Residuals vs", "mean_views"),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+# residuals vs log_mean_views
+plot(nba_data_final$log_mean_views, Tresiduals, 
+       xlab = "log_mean_views", 
+       ylab = "Residuals", 
+       main = paste("Transformed Residuals vs log_mean_views"),
+       col = "cadetblue", pch = 16, cex.main = 0.9)
+  abline(h = 0, col = "red", lwd = 2)
+```
+# residuals vs each predictor
+```{r}
+predictors <- nba_data_final[, c("Age_sq", "PTS", "AST", "TRB", "log_mean_views", "Pos1")]  # Select predictors
+par(mfrow = c(2, 3))
+
+residuals <- resid(transformed_fit)
+
+for (predictor in names(predictors)) {
+  plot(predictors[[predictor]], residuals, 
+       xlab = predictor, 
+       ylab = "Residuals", 
+       main = paste("Residuals vs", predictor),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+}
+```
+# full F-test
+```{r}
+# Perform ANOVA to compare with the null model
+fit_null <- lm(Salary_transformed ~ 1, data = nba_data_final)  # Null model with only intercept
+anova(fit_null, transformed_fit)
+```
+# Partial F-tests
+```{r}
+# dropping Age_Sq:PTS
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 * log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq + PTS + AST + TRB + Pos1 * log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping Pos1:log_mean_views
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 * log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # not significant
+```
+```{r}
+# dropping Pos1
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping log_mean_views
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping TRB
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping AST
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ Age_sq * PTS + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping Age_sq
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+```{r}
+# dropping PTS
+full_fit = lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+reduced_fit = lm(Salary_transformed ~ PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+anova(reduced_fit, full_fit) # is significant
+```
+# Final model
+```{r}
+final_model <- lm(Salary_transformed ~ Age_sq * PTS + AST + TRB + Pos1 + log_mean_views, 
+                      data = nba_data_final)
+summary(final_model)
+```
+# Verifying assumptions for final model
+```{r}
+par(mfrow = c(2, 2))
+plot(final_model, which = c(1, 2, 3, 4))
+```
+# residuals vs each predictor
+```{r}
+predictors <- nba_data_final[, c("Age_sq", "PTS", "AST", "TRB", "Pos1", "log_mean_views")]  # Select predictors
+par(mfrow = c(2, 3))
+
+residuals <- resid(final_model)
+
+for (predictor in names(predictors)) {
+  plot(predictors[[predictor]], residuals, 
+       xlab = predictor, 
+       ylab = "Residuals", 
+       main = paste("Residuals vs", predictor),
+       col = "cadetblue", pch = 16)
+  abline(h = 0, col = "red", lwd = 2)
+}
+```
+# VIF
+```{r}
+library(car)
+vif(final_model)
+```
+# Outliers, influential points, leverage points
+```{r}
+# outliers
+plot(final_model, which = c(3))
+std_residuals <- rstandard(final_model)
+outliers <- which(abs(std_residuals) > 4)
+outliers
+nba_data_final[538,]
+# high leverage points
+hat <- hatvalues(final_model)
+threshold <- 2 * mean(hat)
+plot(hat)
+abline(h = threshold, col = "red", lty = 2)
+# influential points
+plot(final_model, which = c(4))
+nba_data_final[538,]
+nba_data_final[928,]
+nba_data_final[1066,]
+```
+# Inference
+```{r}
+confidence_intervals <- confint(final_model)
+print(confidence_intervals)
+```
